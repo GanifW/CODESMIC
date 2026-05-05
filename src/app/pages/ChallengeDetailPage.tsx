@@ -5,7 +5,7 @@ import { CosmicBackground } from "../components/CosmicBackground";
 import { motion } from "motion/react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { Clock, Star, ChevronRight, Code, Lightbulb, Play, Lock, Unlock, Sparkles } from "lucide-react";
-import { apiRequest } from "../../lib/api";
+import { apiRequest, getAuthToken, getStoredUserProfile, saveUserProfile } from "../../lib/api";
 
 type QuestionDetail = {
   id: number;
@@ -31,9 +31,34 @@ export function ChallengeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [unlockedHints, setUnlockedHints] = useState<number[]>([0]);
-  const [userXp, setUserXp] = useState(150);
+  const [userXp, setUserXp] = useState(0);
+  const [hintStatus, setHintStatus] = useState<string | null>(null);
 
   const hintCosts = [0, 5, 10];
+
+  useEffect(() => {
+    const storedProfile = getStoredUserProfile();
+    if (storedProfile) {
+      setUserXp(storedProfile.xp ?? 0);
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      return;
+    }
+
+    apiRequest<{ progress: { xp: number } }>("/progress", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((data) => {
+        if (data?.progress?.xp !== undefined) {
+          setUserXp(data.progress.xp);
+        }
+      })
+      .catch(() => {
+        /* Keep the locally stored XP if progress fetch fails */
+      });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -52,10 +77,49 @@ export function ChallengeDetailPage() {
     fetchQuestion();
   }, [id]);
 
-  const handleUnlockHint = (hintIndex: number) => {
-    if (!unlockedHints.includes(hintIndex) && userXp >= hintCosts[hintIndex]) {
+  const handleUnlockHint = async (hintIndex: number) => {
+    if (unlockedHints.includes(hintIndex)) {
+      return;
+    }
+
+    const cost = hintCosts[hintIndex];
+    if (userXp < cost) {
+      setHintStatus(`XP tidak cukup. Butuh ${cost - userXp} XP lagi untuk unlock.`);
+      return;
+    }
+
+    if (cost === 0) {
       setUnlockedHints([...unlockedHints, hintIndex]);
-      setUserXp(userXp - hintCosts[hintIndex]);
+      setHintStatus(`Hint ${hintIndex + 1} berhasil dibuka!`);
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      setHintStatus('Silakan login ulang untuk mengupdate XP.');
+      return;
+    }
+
+    try {
+      const data = await apiRequest<{ success: boolean; message: string; xp: number; totalXp: number }>(
+        "/progress/hint",
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ questionId: Number(id), hintIndex }),
+        }
+      );
+
+      setUnlockedHints([...unlockedHints, hintIndex]);
+      setUserXp(data.totalXp);
+      setHintStatus(`Hint ${hintIndex + 1} berhasil dibuka!`);
+
+      const storedProfile = getStoredUserProfile();
+      if (storedProfile) {
+        saveUserProfile({ ...storedProfile, xp: data.totalXp });
+      }
+    } catch (err) {
+      setHintStatus((err as Error).message || 'Gagal membuka hint.');
     }
   };
 
@@ -248,17 +312,22 @@ export function ChallengeDetailPage() {
                               {getHintText(hintIndex)}
                             </motion.div>
                           ) : canUnlock ? (
-                            <button
-                              onClick={() => handleUnlockHint(hintIndex)}
-                              disabled={userXp < cost}
-                              className={`mt-2 w-full px-3 py-2 rounded text-xs font-semibold transition-all ${
-                                userXp >= cost
-                                  ? "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white"
-                                  : "bg-slate-700 text-slate-400 cursor-not-allowed"
-                              }`}
-                            >
-                              {cost > 0 ? `Unlock (${cost} XP)` : "Buka"}
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleUnlockHint(hintIndex)}
+                                disabled={userXp < cost}
+                                className={`mt-2 w-full px-3 py-2 rounded text-xs font-semibold transition-all ${
+                                  userXp >= cost
+                                    ? "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white"
+                                    : "bg-slate-700 text-slate-400 cursor-not-allowed"
+                                }`}
+                              >
+                                {cost > 0 ? `Unlock (${cost} XP)` : "Buka"}
+                              </button>
+                              {userXp < cost && cost > 0 && (
+                                <p className="mt-2 text-xs text-rose-300">XP tidak cukup. Butuh {cost - userXp} XP lagi untuk unlock.</p>
+                              )}
+                            </>
                           ) : (
                             <div className="mt-2 p-2 text-center text-xs text-slate-500">
                               Buka hint sebelumnya dulu
@@ -268,6 +337,11 @@ export function ChallengeDetailPage() {
                       );
                     })}
                   </div>
+                  {hintStatus && (
+                    <div className="mt-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 p-3 text-sm text-rose-100">
+                      {hintStatus}
+                    </div>
+                  )}
 
                   <motion.div
                     className="mt-4 p-3 bg-violet-500/10 border border-violet-500/30 rounded-lg"
@@ -283,35 +357,6 @@ export function ChallengeDetailPage() {
                   </motion.div>
                 </motion.div>
 
-                {/* Progress Stats */}
-                <motion.div
-                  className="bg-gradient-to-br from-slate-900/90 to-slate-800/90 border border-violet-500/20 rounded-2xl p-6"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 }}
-                >
-                  <h3 className="text-xl font-bold mb-4">Progress Kamu</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-slate-400">Tantangan Selesai</span>
-                        <span className="text-violet-300 font-semibold">12/50</span>
-                      </div>
-                      <div className="h-2 bg-slate-950/50 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-violet-500 to-purple-500 w-[24%] rounded-full"></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-slate-400">Total XP Terkumpul</span>
-                        <span className="text-yellow-400 font-semibold">850 XP</span>
-                      </div>
-                      <div className="h-2 bg-slate-950/50 rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-yellow-500 to-orange-500 w-[42%] rounded-full"></div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
               </div>
             </div>
           </div>

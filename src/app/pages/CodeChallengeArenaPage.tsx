@@ -153,7 +153,7 @@ export function CodeChallengeArenaPage() {
                                 <Target className="w-5 h-5 text-white" />
                               </div>
                               <div>
-                                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Challenge #{question.id}</p>
+
                                 <p className="text-sm text-slate-400">{question.subject}</p>
                               </div>
                             </div>

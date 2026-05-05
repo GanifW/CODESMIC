@@ -2,11 +2,13 @@ import express from 'express';
 import db from '../db.js';
 
 const router = express.Router();
+const allowedSubjects = ['HTML', 'CSS', 'JavaScript'];
 
 router.get('/', async (req, res) => {
   try {
     const [rows] = await db.query(
-      'SELECT id, title, xp, subject, subtopic, difficulty, type FROM questions ORDER BY id'
+      'SELECT id, title, xp, subject, subtopic, difficulty, type FROM questions WHERE subject IN (?, ?, ?) ORDER BY id',
+      allowedSubjects
     );
     res.json(rows);
   } catch (error) {
@@ -18,7 +20,10 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const questionId = Number(req.params.id);
-    const [rows] = await db.query('SELECT * FROM questions WHERE id = ?', [questionId]);
+    const [rows] = await db.query(
+      'SELECT * FROM questions WHERE id = ? AND subject IN (?, ?, ?)',
+      [questionId, ...allowedSubjects]
+    );
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Soal tidak ditemukan.' });
     }
@@ -49,6 +54,10 @@ router.post('/', async (req, res) => {
       hint2,
       hint3,
     } = req.body;
+
+    if (!allowedSubjects.includes(subject)) {
+      return res.status(400).json({ message: 'Subjek hanya boleh HTML, CSS, atau JavaScript.' });
+    }
 
     const [result] = await db.query(
       `INSERT INTO questions (title, xp, subject, subtopic, difficulty, type, mini_materi, code_html, code_css, code_js, task, validation_js, answer, hint1, hint2, hint3)
@@ -102,6 +111,10 @@ router.put('/:id', async (req, res) => {
       hint2,
       hint3,
     } = req.body;
+
+    if (!allowedSubjects.includes(subject)) {
+      return res.status(400).json({ message: 'Subjek hanya boleh HTML, CSS, atau JavaScript.' });
+    }
 
     await db.query(
       `UPDATE questions SET title = ?, xp = ?, subject = ?, subtopic = ?, difficulty = ?, type = ?, mini_materi = ?, code_html = ?, code_css = ?, code_js = ?, task = ?, validation_js = ?, answer = ?, hint1 = ?, hint2 = ?, hint3 = ?

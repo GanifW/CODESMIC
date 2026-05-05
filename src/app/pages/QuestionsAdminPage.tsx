@@ -217,11 +217,15 @@ export function QuestionsAdminPage() {
                   </label>
                   <label className="block">
                     <span className="text-slate-200">Subjek</span>
-                    <input
+                    <select
                       className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950/80 px-3 py-2 text-white"
                       value={formState.subject}
                       onChange={(event) => updateField('subject', event.target.value)}
-                    />
+                    >
+                      <option value="HTML">HTML</option>
+                      <option value="CSS">CSS</option>
+                      <option value="JavaScript">JavaScript</option>
+                    </select>
                   </label>
                   <label className="block">
                     <span className="text-slate-200">Submateri</span>

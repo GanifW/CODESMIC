@@ -5,7 +5,7 @@ import { Footer } from "../components/Footer";
 import { CosmicBackground } from "../components/CosmicBackground";
 import { motion } from "motion/react";
 import { Code, ChevronLeft, Play, CheckCircle2, Lock, Unlock, Lightbulb, Sparkles } from "lucide-react";
-import { apiRequest, getAuthToken } from "../../lib/api";
+import { apiRequest, getAuthToken, getStoredUserProfile, saveUserProfile } from "../../lib/api";
 
 type QuestionDetail = {
   id: number;
@@ -40,7 +40,8 @@ export function ChallengeEditorPage() {
   const [activeTab, setActiveTab] = useState<"html" | "css" | "js">("html");
   
   const [unlockedHints, setUnlockedHints] = useState<number[]>([0]);
-  const [userXp, setUserXp] = useState(150);
+  const [userXp, setUserXp] = useState(0);
+  const [hintStatus, setHintStatus] = useState<string | null>(null);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [testStatus, setTestStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -99,8 +100,14 @@ export function ChallengeEditorPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        const newXp = data.totalXp ?? (userXp + (data.xp || 0));
         setSubmitStatus(`✅ ${data.message} +${data.xp} XP`);
-        setUserXp((prev) => prev + (data.xp || 0));
+        setUserXp(newXp);
+
+        const storedProfile = getStoredUserProfile();
+        if (storedProfile) {
+          saveUserProfile({ ...storedProfile, xp: newXp });
+        }
       } else if (res.status === 401) {
         setSubmitStatus('❌ Token tidak valid atau sesi berakhir. Silakan login ulang.');
       } else {
@@ -115,6 +122,30 @@ export function ChallengeEditorPage() {
   const [showHints, setShowHints] = useState(true);
   
   const hintCosts = [0, 5, 10];
+
+  useEffect(() => {
+    const storedProfile = getStoredUserProfile();
+    if (storedProfile) {
+      setUserXp(storedProfile.xp ?? 0);
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      return;
+    }
+
+    apiRequest<{ progress: { xp: number } }>("/progress", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((data) => {
+        if (data?.progress?.xp !== undefined) {
+          setUserXp(data.progress.xp);
+        }
+      })
+      .catch(() => {
+        // Ignore progress fetch errors and keep stored XP if available.
+      });
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -136,13 +167,20 @@ export function ChallengeEditorPage() {
     fetchQuestion();
   }, [id]);
 
-
-
   const handleUnlockHint = (hintIndex: number) => {
-    if (!unlockedHints.includes(hintIndex) && userXp >= hintCosts[hintIndex]) {
-      setUnlockedHints([...unlockedHints, hintIndex]);
-      setUserXp(userXp - hintCosts[hintIndex]);
+    if (unlockedHints.includes(hintIndex)) {
+      return;
     }
+
+    const cost = hintCosts[hintIndex];
+    if (userXp >= cost) {
+      setUnlockedHints([...unlockedHints, hintIndex]);
+      setUserXp(userXp - cost);
+      setHintStatus(`Hint ${hintIndex + 1} berhasil dibuka!`);
+      return;
+    }
+
+    setHintStatus(`XP tidak cukup. Butuh ${cost - userXp} XP lagi untuk unlock.`);
   };
 
   const getHintText = (hintIndex: number): string => {
@@ -401,17 +439,22 @@ export function ChallengeEditorPage() {
                                   {getHintText(hintIndex)}
                                 </motion.div>
                               ) : canUnlock ? (
-                                <button
-                                  onClick={() => handleUnlockHint(hintIndex)}
-                                  disabled={userXp < cost}
-                                  className={`w-full px-2 py-1 rounded text-xs font-semibold transition-all ${
-                                    userXp >= cost
-                                      ? "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white"
-                                      : "bg-slate-700 text-slate-400 cursor-not-allowed"
-                                  }`}
-                                >
-                                  {cost > 0 ? `Unlock (${cost} XP)` : "Buka"}
-                                </button>
+                                <>
+                                  <button
+                                    onClick={() => handleUnlockHint(hintIndex)}
+                                    disabled={userXp < cost}
+                                    className={`w-full px-2 py-1 rounded text-xs font-semibold transition-all ${
+                                      userXp >= cost
+                                        ? "bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white"
+                                        : "bg-slate-700 text-slate-400 cursor-not-allowed"
+                                    }`}
+                                  >
+                                    {cost > 0 ? `Unlock (${cost} XP)` : "Buka"}
+                                  </button>
+                                  {userXp < cost && cost > 0 && (
+                                    <p className="mt-2 text-xs text-rose-300">XP tidak cukup. Butuh {cost - userXp} XP lagi untuk unlock.</p>
+                                  )}
+                                </>
                               ) : (
                                 <div className="text-center text-xs text-slate-500 py-1">
                                   Buka hint sebelumnya
@@ -421,6 +464,11 @@ export function ChallengeEditorPage() {
                           );
                         })}
                       </div>
+                      {hintStatus && (
+                        <div className="mt-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-100">
+                          {hintStatus}
+                        </div>
+                      )}
 
                       <motion.div
                         className="mt-3 p-2 bg-violet-500/10 border border-violet-500/30 rounded text-xs"

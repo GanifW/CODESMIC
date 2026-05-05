@@ -1,9 +1,11 @@
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Wrench, Code2, Bug, ArrowRight, Trophy, Star, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Navigation } from "../components/Navigation";
 import { Footer } from "../components/Footer";
 import { CosmicBackground } from "../components/CosmicBackground";
+import { apiRequest } from "@/lib/api";
 
 const learningFeatures = [
   {
@@ -12,6 +14,7 @@ const learningFeatures = [
     description: "Tempat eksperimen coding dengan live visual diff",
     details: "Lihat langsung efek dari setiap perubahan kode! Lab ini kasih kamu kode yang broken, dan kamu harus fix sambil lihat preview real-time.",
     challenges: 10,
+    questionType: "Fix & Run Lab",
     difficulty: "Beginner",
     color: "from-pink-500 to-rose-500",
     glow: "pink",
@@ -24,6 +27,7 @@ const learningFeatures = [
     description: "Battle lawan problem coding dengan kode rusak",
     details: "Tantangan utama! Di sini kamu akan battle dengan berbagai kasus: broken HTML structure, CSS berantakan, dan layout chaos. Tempat asah skill problem-solving!",
     challenges: 40,
+    questionType: "Code Challenge Arena",
     difficulty: "Intermediate",
     color: "from-violet-500 to-purple-500",
     glow: "violet",
@@ -36,6 +40,7 @@ const learningFeatures = [
     description: "Fokus cari dan pahami error dengan sistem diagnosis",
     details: "Zone khusus buat master debugging! Sistem akan track kesalahan yang sering kamu buat, kasih analysis pattern error, dan bantuin kamu paham kenapa terjadi.",
     challenges: 30,
+    questionType: "Debugging Zone",
     difficulty: "Intermediate",
     color: "from-amber-500 to-orange-500",
     glow: "amber",
@@ -57,7 +62,51 @@ const getGlowClasses = (glow: string) => {
   }
 };
 
+type Question = {
+  id: number;
+  title: string;
+  xp: number;
+  subject: string;
+  subtopic: string;
+  difficulty: string;
+  type: string;
+};
+
 export function LearningPage() {
+  const [questionCounts, setQuestionCounts] = useState<Record<string, number>>({
+    "Fix & Run Lab": 0,
+    "Code Challenge Arena": 0,
+    "Debugging Zone": 0,
+  });
+  const [totalChallenges, setTotalChallenges] = useState(0);
+  const [loadingCounts, setLoadingCounts] = useState(true);
+
+  useEffect(() => {
+    const loadCounts = async () => {
+      try {
+        const data = await apiRequest<Question[]>('/questions');
+        const counts = {
+          "Fix & Run Lab": data.filter((q) => q.type === 'Fix & Run Lab').length,
+          "Code Challenge Arena": data.filter((q) => q.type === 'Code Challenge Arena').length,
+          "Debugging Zone": data.filter((q) => q.type === 'Debugging Zone').length,
+        };
+        setQuestionCounts(counts);
+        setTotalChallenges(Object.values(counts).reduce((sum, value) => sum + value, 0));
+      } catch (err) {
+        setQuestionCounts({
+          "Fix & Run Lab": 0,
+          "Code Challenge Arena": 0,
+          "Debugging Zone": 0,
+        });
+        setTotalChallenges(0);
+      } finally {
+        setLoadingCounts(false);
+      }
+    };
+
+    loadCounts();
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-white relative">
       <CosmicBackground />
@@ -89,7 +138,7 @@ export function LearningPage() {
               {/* Stats */}
               <div className="flex flex-wrap justify-center gap-6 mb-8">
                 <div className="px-6 py-3 bg-slate-800/50 border border-violet-500/30 rounded-lg">
-                  <div className="text-2xl font-bold text-violet-400">107</div>
+                  <div className="text-2xl font-bold text-violet-400">{loadingCounts ? '...' : totalChallenges}</div>
                   <div className="text-sm text-slate-400">Total Challenges</div>
                 </div>
                 <div className="px-6 py-3 bg-slate-800/50 border border-violet-500/30 rounded-lg">
@@ -179,7 +228,7 @@ export function LearningPage() {
                                   </span>
                                   <span className="flex items-center gap-1 text-slate-400 text-sm">
                                     <Trophy className="w-4 h-4" />
-                                    {feature.challenges} Challenges
+                                    {loadingCounts ? feature.challenges : questionCounts[feature.questionType] ?? feature.challenges} Challenges
                                   </span>
                                 </div>
                               </div>

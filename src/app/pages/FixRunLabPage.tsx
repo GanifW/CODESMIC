@@ -149,7 +149,6 @@ export function FixRunLabPage() {
                                 <Play className="w-5 h-5 text-white" />
                               </div>
                               <div>
-                                <div className="text-sm text-slate-400">Challenge #{question.id}</div>
                                 <div className="flex items-center gap-2">
                                   <Star className="w-4 h-4 text-yellow-400" />
                                   <span className="text-sm text-yellow-400">{question.xp} XP</span>

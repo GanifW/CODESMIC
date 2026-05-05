@@ -49,7 +49,54 @@ router.get('/', async (req, res) => {
   }
 });
 
-export default router;
+// Endpoint untuk unlock hint dan mengurangi XP user
+router.post('/hint', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+    const userId = getUserIdFromToken(token);
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { questionId, hintIndex } = req.body;
+    const hintCosts = [0, 5, 10];
+    const cost = hintCosts[hintIndex] ?? 0;
+
+    if (typeof questionId !== 'number' || questionId <= 0) {
+      return res.status(400).json({ message: 'ID soal tidak valid.' });
+    }
+
+    if (cost <= 0) {
+      return res.json({ success: true, message: 'Hint gratis dibuka.', xp: 0 });
+    }
+
+    const [users] = await db.query('SELECT xp FROM users WHERE id = ?', [userId]);
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'Pengguna tidak ditemukan.' });
+    }
+
+    const currentXp = users[0].xp ?? 0;
+    if (currentXp < cost) {
+      return res.status(400).json({ message: `XP tidak cukup. Butuh ${cost - currentXp} XP lagi.` });
+    }
+
+    await db.query('UPDATE users SET xp = xp - ? WHERE id = ?', [cost, userId]);
+    await db.query(
+      'INSERT INTO activities (user_id, title, xp, type, created_at) VALUES (?, ?, ?, ?, NOW())',
+      [userId, `Unlock Hint ${hintIndex + 1}`, -cost, 'hint']
+    );
+
+    const [updatedUsers] = await db.query('SELECT xp FROM users WHERE id = ?', [userId]);
+    const newXp = updatedUsers[0]?.xp ?? 0;
+
+    res.json({ success: true, message: 'Hint berhasil dibuka.', xp: -cost, totalXp: newXp });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Gagal memproses unlock hint.' });
+  }
+});
 
 // Endpoint untuk submit jawaban challenge dan update XP user
 router.post('/submit', async (req, res) => {
@@ -117,8 +164,8 @@ router.post('/submit', async (req, res) => {
     );
 
     // Ambil XP terbaru
-    const [users] = await db.query('SELECT xp FROM users WHERE id = ?', [userId]);
-    const newXp = users[0]?.xp ?? 0;
+    const [usersAfter] = await db.query('SELECT xp FROM users WHERE id = ?', [userId]);
+    const newXp = usersAfter[0]?.xp ?? 0;
 
     res.json({ success: true, message: 'Jawaban benar! XP bertambah.', xp: question.xp, totalXp: newXp });
   } catch (error) {
@@ -126,3 +173,5 @@ router.post('/submit', async (req, res) => {
     res.status(500).json({ message: 'Gagal memproses submit.' });
   }
 });
+
+export default router;
